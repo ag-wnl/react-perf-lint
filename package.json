@@ -1,12 +1,23 @@
 {
   "name": "react-perf-lint",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "A CLI tool to analyze React code for performance issues",
+  "main": "dist/index.js",
+  "bin": {
+    "perf-lint": "dist/index.js"
+  },
   "scripts": {
+    "build": "tsc",
+    "start": "pnpm run build && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "keywords": [
+    "react",
+    "performance",
+    "lint",
+    "tsx",
+    "cli"
+  ],
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@9.15.3+sha512.1f79bc245a66eb0b07c5d4d83131240774642caaa86ef7d0434ab47c0d16f66b04e21e0c086eb61e62c77efc4d7f7ec071afad3796af64892fae66509173893a",
