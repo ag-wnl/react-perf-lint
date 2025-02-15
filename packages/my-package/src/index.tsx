@@ -56,6 +56,63 @@ const analyzeFile = (filePath: string) => {
         );
       }
     },
+    JSXAttribute(path: any) {
+      if (path.node.name.name === "style") {
+        console.log(
+          chalk.red(
+            `❌ Inline style detected in ${filePath}:${path.node.loc?.start.line}`
+          )
+        );
+        console.log(
+          "   - Consider moving styles to a stylesheet or using useMemo."
+        );
+      }
+    },
+    CallExpression(path: any) {
+      if (
+        path.node.callee.name === "useEffect" ||
+        path.node.callee.name === "useCallback" ||
+        path.node.callee.name === "useMemo"
+      ) {
+        const hasDependencyArray = path.node.arguments.length > 1;
+        if (!hasDependencyArray) {
+          console.log(
+            chalk.yellow(
+              `⚠️  Missing dependency array in ${filePath}:${path.node.loc?.start.line}`
+            )
+          );
+          console.log("   - Ensure all dependencies are specified.");
+        }
+      }
+    },
+    MemberExpression(path: any) {
+      if (
+        path.node.object.name === "console" &&
+        path.node.property.name === "log"
+      ) {
+        console.log(
+          chalk.yellow(
+            `⚠️  Console log found in ${filePath}:${path.node.loc?.start.line}`
+          )
+        );
+        console.log("   - Remove console logs in production.");
+      }
+    },
+    JSXElement(path: any) {
+      const openingElement = path.node.openingElement;
+      if (
+        openingElement.attributes.some(
+          (attr: any) => attr.name && attr.name.name === "key"
+        ) === false
+      ) {
+        console.log(
+          chalk.red(
+            `❌ Missing key prop in list element in ${filePath}:${path.node.loc?.start.line}`
+          )
+        );
+        console.log("   - Ensure each list element has a unique key prop.");
+      }
+    },
   });
 };
 

@@ -2,9 +2,9 @@
   "name": "react-perf-lint",
   "version": "1.0.0",
   "description": "A CLI tool to analyze React code for performance issues",
-  "main": "dist/index.js",
+  "main": "packages/my-package/dist/index.js",
   "bin": {
-    "perf-lint": "dist/index.js"
+    "perf-lint": "./packages/my-package/dist/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -24,12 +24,15 @@
   "dependencies": {
     "@babel/parser": "^7.26.7",
     "@babel/traverse": "^7.26.7",
-    "chalk": "^5.4.1",
     "ts-node": "^10.9.2"
   },
   "devDependencies": {
     "@types/babel__traverse": "^7.20.6",
     "@types/node": "^22.13.1",
     "typescript": "^5.7.3"
-  }
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ]
 }
