@@ -30,6 +30,8 @@ const analyzeFile = (filePath: string) => {
     plugins: ["jsx", "typescript"],
   });
 
+  const expensiveOperations = new Set(["map", "filter", "reduce"]);
+
   traverse(ast, {
     ArrowFunctionExpression(path: any) {
       if (
@@ -43,7 +45,85 @@ const analyzeFile = (filePath: string) => {
         );
         console.log("   - Consider using useCallback to avoid re-renders.");
       }
+
+      // checking expensive operations within a component, which can be taken outside the component and memoized separately:
+      if (
+        path.parentPath.isJSXExpressionContainer() ||
+        path.parentPath.isReturnStatement()
+      ) {
+        path.traverse({
+          CallExpression(innerPath: any) {
+            if (
+              innerPath.node.callee.type === "MemberExpression" &&
+              expensiveOperations.has(innerPath.node.callee.property.name)
+            ) {
+              console.log(
+                chalk.yellow(
+                  `⚠️  Expensive operation inside render in ${filePath}:${innerPath.node.loc?.start.line}`
+                )
+              );
+              console.log(
+                "   - Consider memoizing the result with useMemo, extracting it outside the component."
+              );
+            }
+          },
+        });
+      }
     },
+
+    FunctionDeclaration(path: any) {
+      if (path.node.id && path.node.id.name.match(/^[A-Z]/)) {
+        const componentName = path.node.id.name;
+        const propsPassedDown = new Set();
+
+        path.traverse({
+          JSXOpeningElement(jsxPath: any) {
+            jsxPath.node.attributes.forEach((attr: any) => {
+              if (
+                attr.type === "JSXAttribute" &&
+                attr.value.type === "JSXExpressionContainer"
+              ) {
+                if (
+                  attr.value.expression.type === "Identifier" &&
+                  path.node.params.some(
+                    (param: any) => param.name === attr.value.expression.name
+                  )
+                ) {
+                  //Found a prop passed down
+                  propsPassedDown.add(attr.value.expression.name);
+                }
+              }
+            });
+          },
+          Identifier(identifierPath: any) {
+            if (
+              identifierPath.node.name &&
+              path.node.params.some(
+                (param: any) => param.name === identifierPath.node.name
+              )
+            ) {
+              //Component is using the prop
+              propsPassedDown.delete(identifierPath.node.name);
+            }
+          },
+        });
+
+        // check for prop drilling:
+        if (propsPassedDown.size > 0) {
+          console.log(
+            chalk.yellow(
+              `⚠️  Potential prop drilling in ${filePath}:${
+                path.node.loc?.start.line
+              } for props: ${Array.from(propsPassedDown).join(", ")}`
+            )
+          );
+          console.log(
+            "   - Consider using Context or a state management library."
+          );
+        }
+      }
+    },
+
     ObjectExpression(path: any) {
       if (path.parent.type === "JSXExpressionContainer") {
         console.log(
@@ -56,6 +136,7 @@ const analyzeFile = (filePath: string) => {
         );
       }
     },
+
     JSXAttribute(path: any) {
       if (path.node.name.name === "style") {
         console.log(
@@ -67,7 +148,25 @@ const analyzeFile = (filePath: string) => {
           "   - Consider moving styles to a stylesheet or using useMemo."
         );
       }
+
+      // check inline function defining and directly being passed to jsx attribute
+      if (
+        path.node.value &&
+        path.node.value.type === "JSXExpressionContainer"
+      ) {
+        if (path.node.value.expression.type === "ArrowFunctionExpression") {
+          console.log(
+            chalk.yellow(
+              `⚠️  Potential performance issue: Inline function in JSX attribute in ${filePath}:${path.node.loc?.start.line}`
+            )
+          );
+          console.log(
+            "   - Use useCallback or define the function outside the component."
+          );
+        }
+      }
     },
+
     CallExpression(path: any) {
       if (
         path.node.callee.name === "useEffect" ||
@@ -85,32 +184,54 @@ const analyzeFile = (filePath: string) => {
         }
       }
     },
+
+    // todo: do something here
     MemberExpression(path: any) {
-      if (
-        path.node.object.name === "console" &&
-        path.node.property.name === "log"
-      ) {
+      // if (
+      //   path.node.object.name === "console" &&
+      //   path.node.property.name === "log"
+      // ) {
+      //   console.log(
+      //     chalk.yellow(
+      //       `⚠️  Console log found in ${filePath}:${path.node.loc?.start.line}`
+      //     )
+      //   );
+      //   console.log("   - Remove console logs in production.");
+      // }
+    },
+
+    JSXElement(path: any) {
+      // check for large component trees (currently threshold over 20):
+      const childCount = path.node.children.filter(
+        (child: any) => child.type === "JSXElement"
+      ).length;
+      if (childCount > 20) {
         console.log(
           chalk.yellow(
-            `⚠️  Console log found in ${filePath}:${path.node.loc?.start.line}`
+            `⚠️  Large component tree in ${filePath}:${path.node.loc?.start.line} - ${childCount} children`
           )
         );
-        console.log("   - Remove console logs in production.");
+        console.log(
+          "   - Consider breaking down the component into smaller sub-components."
+        );
       }
     },
-    JSXElement(path: any) {
-      const openingElement = path.node.openingElement;
-      if (
-        openingElement.attributes.some(
-          (attr: any) => attr.name && attr.name.name === "key"
-        ) === false
-      ) {
-        console.log(
-          chalk.red(
-            `❌ Missing key prop in list element in ${filePath}:${path.node.loc?.start.line}`
-          )
-        );
-        console.log("   - Ensure each list element has a unique key prop.");
+
+    TaggedTemplateExpression(path: any) {
+      // check for styled components: analyze the template literal for complexity
+      // checks for complicated css-in-js calculations
+      if (path.node.tag.name === "styled") {
+        const numInterpolations = path.node.quasi.expressions.length;
+        if (numInterpolations > 5) {
+          console.log(
+            chalk.yellow(
+              `⚠️  Complex styling logic in styled-component in ${filePath}:${path.node.loc?.start.line}`
+            )
+          );
+          console.log(
+            "   - Consider optimizing the styling logic or using CSS variables."
+          );
+        }
       }
     },
   });
