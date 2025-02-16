@@ -1,9 +1,16 @@
 {
-  "name": "my-package",
+  "name": "react-perf-lint",
   "version": "1.0.0",
-  "description": "A package for React performance linting",
+  "description": "A package for React performance linting and automated code review",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "keywords": [
+    "react",
+    "performance",
+    "lint",
+    "code review"
+  ],
+  "author": "Agnideep Ghosh",
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
@@ -24,6 +31,5 @@
   "peerDependencies": {
     "react": "^19.0.0"
   },
-  "author": "",
   "license": "ISC"
 }
