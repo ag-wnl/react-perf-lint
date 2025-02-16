@@ -32,7 +32,7 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
   const ast = parse(code, {
     sourceType: "module",
     plugins: ["jsx", "typescript"],
-  });
+  }) as any;
 
   const componentComplexity = new Map<string, number>();
   const expensiveOperations = new Set(["map", "filter", "reduce"]);
