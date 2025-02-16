@@ -22,8 +22,24 @@ const getTSXFiles = (dir: string): string[] => {
   return results;
 };
 
-// analyze perf:
-const analyzeFile = (filePath: string) => {
+const analyzeFile = (filePath: string): CodeReviewResult => {
+  const result: CodeReviewResult = {
+    filePath,
+    issues: [],
+    score: 100, // Start with perfect score, deduct for issues
+  };
+
+  const addIssue = (
+    type: string,
+    message: string,
+    line: number,
+    severity: "error" | "warning" | "info",
+    suggestion: string
+  ) => {
+    result.issues.push({ type, message, line, severity, suggestion });
+    result.score -= severity === "error" ? 5 : severity === "warning" ? 3 : 1;
+  };
+
   const code = fs.readFileSync(filePath, "utf-8");
   const ast = parse(code, {
     sourceType: "module",
@@ -235,6 +251,30 @@ const analyzeFile = (filePath: string) => {
       }
     },
   });
+
+  return result;
+};
+
+const generateReport = (results: CodeReviewResult[]) => {
+  let reportContent = "# 📊 Code Review Report\n\n";
+
+  results.forEach((result) => {
+    reportContent += `## 📄 ${result.filePath} - Score: ${result.score}/100\n\n`;
+    result.issues.forEach((issue) => {
+      const severityTag = issue.severity.toUpperCase();
+      reportContent += `### ${severityTag} (line ${issue.line}): ${issue.message}\n`;
+      reportContent += `**Suggestion:** ${issue.suggestion}\n\n`;
+    });
+  });
+
+  const totalScore =
+    results.reduce((sum, result) => sum + result.score, 0) / results.length;
+  reportContent += `# 🏆 Overall Code Quality Score: ${Math.round(
+    totalScore
+  )}/100\n`;
+
+  fs.writeFileSync("codeReviewResult.md", reportContent);
+  console.log(chalk.green("✅ Report generated at codeReviewResult.md"));
 };
 
 // run linter
@@ -245,7 +285,9 @@ const run = () => {
     console.log(chalk.green("✅ No .tsx files found."));
     return;
   }
-  tsxFiles.forEach(analyzeFile);
+
+  const results = tsxFiles.map(analyzeFile);
+  generateReport(results);
 };
 
 run();
