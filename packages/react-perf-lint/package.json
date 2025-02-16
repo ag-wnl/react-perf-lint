@@ -1,7 +1,7 @@
 {
   "name": "react-perf-lint",
   "version": "1.0.0",
-  "description": "A package for React performance linting and automated code review",
+  "description": "A tool to improve React app performance and conduct code reviews",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "keywords": [
@@ -11,6 +11,10 @@
     "code review"
   ],
   "author": "Agnideep Ghosh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ag-wnl/react-perf-lint"
+  },
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
@@ -31,5 +35,12 @@
   "peerDependencies": {
     "react": "^19.0.0"
   },
-  "license": "ISC"
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
