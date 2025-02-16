@@ -7,22 +7,8 @@ import path from "path";
 import chalk from "chalk";
 import { parse } from "@babel/parser";
 import traverse from "@babel/traverse";
-
-// get all tsx files in curr directory
-const getTSXFiles = (dir: string): string[] => {
-  let results: string[] = [];
-  const list = fs.readdirSync(dir);
-  for (const file of list) {
-    const filePath = path.join(dir, file);
-    const stat = fs.statSync(filePath);
-    if (stat.isDirectory()) {
-      results = results.concat(getTSXFiles(filePath));
-    } else if (file.endsWith(".tsx")) {
-      results.push(filePath);
-    }
-  }
-  return results;
-};
+import { getTSXFiles } from "./utils/fileUtils";
+import { calculateCyclomaticComplexity } from "./utils/complexityUtils";
 
 const analyzeFile = (filePath: string): CodeReviewResult => {
   const result: CodeReviewResult = {
@@ -154,6 +140,24 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
             "Break down into smaller components"
           );
         }
+
+        // 1. Strict Prop Types
+        const hasPropTypes = path.node.body.body.some(
+          (node: any) =>
+            node.type === "ExpressionStatement" &&
+            node.expression.type === "AssignmentExpression" &&
+            node.expression.left.property?.name === "propTypes"
+        );
+
+        if (!hasPropTypes) {
+          addIssue(
+            "missing-prop-types",
+            `Component ${path.node.id.name} is missing prop types`,
+            path.node.loc?.start.line,
+            "warning",
+            "Add PropTypes or TypeScript interface"
+          );
+        }
       }
     },
 
@@ -235,6 +239,162 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
           );
         }
       }
+
+      // Hooks Rules
+      if (
+        ["useState", "useEffect", "useContext"].includes(path.node.callee.name)
+      ) {
+        if (
+          path.findParent(
+            (p: any) => p.isIfStatement() || p.isLogicalExpression()
+          )
+        ) {
+          addIssue(
+            "conditional-hook",
+            "Hooks should not be called conditionally",
+            path.node.loc?.start.line,
+            "error",
+            "Move hook to top level of component"
+          );
+        }
+      }
+
+      // 3. Accessibility Checks
+      if (
+        path.node.callee.name === "img" &&
+        !path.node.arguments.some(
+          (arg: any) =>
+            arg.type === "JSXExpressionContainer" &&
+            arg.expression.type === "Identifier" &&
+            arg.expression.name === "alt"
+        )
+      ) {
+        addIssue(
+          "missing-alt-text",
+          "Image is missing alt text",
+          path.node.loc?.start.line,
+          "error",
+          "Add descriptive alt text for accessibility"
+        );
+      }
+
+      // Consistent Naming Conventions
+      const name = path.node.callee.name;
+      if (
+        name &&
+        name.match(/^[A-Z]/) &&
+        !path.findParent((p: any) => p.isFunctionDeclaration())
+      ) {
+        addIssue(
+          "invalid-naming",
+          `Variable ${name} should be camelCase`,
+          path.node.loc?.start.line,
+          "warning",
+          "Use camelCase for variables and functions"
+        );
+      }
+
+      // No Unused Variables
+      if (
+        path.node.callee.name === "useState" &&
+        !path.scope.bindings[path.node.arguments[0].name]?.referenced
+      ) {
+        addIssue(
+          "unused-variable",
+          `Unused variable ${path.node.arguments[0].name}`,
+          path.node.loc?.start.line,
+          "warning",
+          "Remove unused variable"
+        );
+      }
+
+      // No Magic Numbers
+      if (
+        path.node.callee.name === "useState" &&
+        path.node.arguments[0].value > 10 &&
+        !path.findParent(
+          (p: any) => p.isVariableDeclarator() || p.isObjectProperty()
+        )
+      ) {
+        addIssue(
+          "magic-number",
+          `Magic number ${path.node.arguments[0].value} found`,
+          path.node.loc?.start.line,
+          "warning",
+          "Replace with named constant"
+        );
+      }
+
+      // consistent return types
+      const returnTypes = new Set();
+      path.traverse({
+        ReturnStatement(returnPath: any) {
+          if (returnPath.node.argument) {
+            returnTypes.add(returnPath.node.argument.type);
+          }
+        },
+      });
+
+      if (returnTypes.size > 1) {
+        addIssue(
+          "inconsistent-return",
+          "Function has inconsistent return types",
+          path.node.loc?.start.line,
+          "error",
+          "Ensure all return paths return the same type"
+        );
+      }
+
+      if (
+        path.node.callee.type === "MemberExpression" &&
+        path.node.callee.property?.name === "then" &&
+        !path.node.arguments.some(
+          (arg: any) => arg.params && arg.params.length > 0
+        )
+      ) {
+        addIssue(
+          "missing-error-handling",
+          "Promise is missing error handling",
+          path.node.loc?.start.line,
+          "error",
+          "Add .catch() or try/catch block"
+        );
+      }
+
+      // avoid Deprecated APIs
+      const deprecatedMethods = [
+        "componentWillMount",
+        "componentWillUpdate",
+        "componentWillReceiveProps",
+      ];
+      if (deprecatedMethods.includes(path.node.callee.name)) {
+        addIssue(
+          "deprecated-method",
+          `Deprecated method ${path.node.callee.name} used`,
+          path.node.loc?.start.line,
+          "error",
+          "Use modern React lifecycle methods"
+        );
+      }
+
+      // Avoid Direct DOM Manipulation
+      const domMethods = [
+        "getElementById",
+        "querySelector",
+        "addEventListener",
+      ];
+      if (
+        path.node.callee.type === "MemberExpression" &&
+        domMethods.includes(path.node.callee.property?.name)
+      ) {
+        addIssue(
+          "direct-dom-manipulation",
+          "Direct DOM manipulation detected",
+          path.node.loc?.start.line,
+          "error",
+          "Use React state and refs instead"
+        );
+      }
     },
 
     // todo: do something here
@@ -311,32 +471,6 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
   });
 
   return result;
-};
-
-// New helper function
-const calculateCyclomaticComplexity = (path: any): number => {
-  let complexity = 1;
-  path.traverse({
-    IfStatement() {
-      complexity++;
-    },
-    ForStatement() {
-      complexity++;
-    },
-    WhileStatement() {
-      complexity++;
-    },
-    SwitchCase(node: any) {
-      if (node.test) complexity++;
-    },
-    LogicalExpression() {
-      complexity++;
-    },
-    ConditionalExpression() {
-      complexity++;
-    },
-  });
-  return complexity;
 };
 
 const generateReport = (results: CodeReviewResult[]) => {
