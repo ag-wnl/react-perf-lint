@@ -1,4 +1,6 @@
-#!/usr/bin/env node
+/**
+ * main file which runs the lint
+ */
 
 import fs from "fs";
 import path from "path";
@@ -26,7 +28,7 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
   const result: CodeReviewResult = {
     filePath,
     issues: [],
-    score: 100, // Start with perfect score, deduct for issues
+    score: 100,
   };
 
   const addIssue = (
@@ -46,6 +48,7 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
     plugins: ["jsx", "typescript"],
   });
 
+  const componentComplexity = new Map<string, number>();
   const expensiveOperations = new Set(["map", "filter", "reduce"]);
 
   traverse(ast, {
@@ -137,6 +140,20 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
             "   - Consider using Context or a state management library."
           );
         }
+
+        // calc cyclomatic complexity
+        const complexity = calculateCyclomaticComplexity(path);
+        componentComplexity.set(path.node.id.name, complexity);
+
+        if (complexity > 10) {
+          addIssue(
+            "high-complexity",
+            `Component ${path.node.id.name} is too complex (${complexity})`,
+            path.node.loc?.start.line,
+            "warning",
+            "Break down into smaller components"
+          );
+        }
       }
     },
 
@@ -199,6 +216,25 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
           console.log("   - Ensure all dependencies are specified.");
         }
       }
+
+      if (path.node.callee.name === "useEffect") {
+        const dependencies = path.node.arguments[1]?.elements || [];
+        const hasPrimitivesOnly = dependencies.every((dep: any) =>
+          ["StringLiteral", "NumericLiteral", "BooleanLiteral"].includes(
+            dep.type
+          )
+        );
+
+        if (!hasPrimitivesOnly) {
+          addIssue(
+            "complex-dependencies",
+            "useEffect has complex dependencies",
+            path.node.loc?.start.line,
+            "warning",
+            "Memoize dependencies or split effects"
+          );
+        }
+      }
     },
 
     // todo: do something here
@@ -250,9 +286,57 @@ const analyzeFile = (filePath: string): CodeReviewResult => {
         }
       }
     },
+
+    // Enhanced prop drilling detection
+    JSXOpeningElement(path: any) {
+      if (path.node.name.type === "JSXIdentifier") {
+        const componentName = path.node.name.name;
+        if (componentName.match(/^[A-Z]/)) {
+          const props = path.node.attributes
+            .filter((attr: any) => attr.type === "JSXAttribute")
+            .map((attr: any) => attr.name.name);
+
+          if (props.length > 5) {
+            addIssue(
+              "too-many-props",
+              `Component ${componentName} receives too many props (${props.length})`,
+              path.node.loc?.start.line,
+              "warning",
+              "Consider using context or composition"
+            );
+          }
+        }
+      }
+    },
   });
 
   return result;
+};
+
+// New helper function
+const calculateCyclomaticComplexity = (path: any): number => {
+  let complexity = 1;
+  path.traverse({
+    IfStatement() {
+      complexity++;
+    },
+    ForStatement() {
+      complexity++;
+    },
+    WhileStatement() {
+      complexity++;
+    },
+    SwitchCase(node: any) {
+      if (node.test) complexity++;
+    },
+    LogicalExpression() {
+      complexity++;
+    },
+    ConditionalExpression() {
+      complexity++;
+    },
+  });
+  return complexity;
 };
 
 const generateReport = (results: CodeReviewResult[]) => {
