@@ -1,6 +1,6 @@
 {
   "name": "react-perf-lint",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A tool to improve React app performance and conduct code reviews",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
